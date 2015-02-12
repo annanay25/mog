@@ -88,7 +88,7 @@ type Playlist []SongID
 type SongID struct {
 	Protocol string
 	Key      string
-	ID       string
+	ID       protocol.ID
 }
 
 func ParseSongID(s string) (id SongID, err error) {
@@ -96,7 +96,11 @@ func ParseSongID(s string) (id SongID, err error) {
 	if len(sp) != 3 {
 		return id, fmt.Errorf("bad songid: %v", s)
 	}
-	return SongID{sp[0], sp[1], sp[2]}, nil
+	return SongID{
+		Protocol: sp[0],
+		Key:      sp[1],
+		ID:       protocol.ID(sp[2]),
+	}, nil
 }
 
 func (s SongID) String() string {
@@ -107,7 +111,7 @@ func (s SongID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Protocol string
 		Key      string
-		ID       string
+		ID       protocol.ID
 		UID      string
 	}{
 		Protocol: s.Protocol,
@@ -117,13 +121,19 @@ func (s SongID) MarshalJSON() ([]byte, error) {
 	})
 }
 
+type Instance struct {
+	protocol.Instance
+	Playlists []*protocol.Playlist
+}
+
 type Server struct {
 	Queue     Playlist
 	Playlists map[string]Playlist
 
-	Repeat    bool
-	Random    bool
-	Protocols map[string]map[string]protocol.Instance
+	Repeat bool
+	Random bool
+	// protocol name -> instance name -> instance
+	Protocols map[string]map[string]*Instance
 
 	// Current song data.
 	PlaylistIndex int
@@ -198,8 +208,9 @@ func (srv *Server) makeWaitData(wt waitType) (*waitData, error) {
 		}
 	case waitPlaylist:
 		d := struct {
-			Queue     PlaylistInfo
-			Playlists map[string]PlaylistInfo
+			Queue             PlaylistInfo
+			Playlists         map[string]PlaylistInfo
+			ProtocolPlaylists map[string]map[string][]*ProtocolPlaylist
 		}{
 			Queue:     srv.playlistInfo(srv.Queue),
 			Playlists: make(map[string]PlaylistInfo),
@@ -207,6 +218,30 @@ func (srv *Server) makeWaitData(wt waitType) (*waitData, error) {
 		for name, p := range srv.Playlists {
 			d.Playlists[name] = srv.playlistInfo(p)
 		}
+		pp := make(map[string]map[string][]*ProtocolPlaylist)
+		for prot, instances := range srv.Protocols {
+			pp[prot] = make(map[string][]*ProtocolPlaylist)
+			for key, inst := range instances {
+				for _, pl := range inst.Playlists {
+					p := ProtocolPlaylist{
+						Name:  pl.Name,
+						Songs: make([]listItem, len(pl.Songs)),
+					}
+					for i, e := range pl.Songs {
+						info, err := inst.Info(e)
+						if err != nil {
+							log.Println("unexpected error:", err)
+						}
+						p.Songs[i] = listItem{
+							ID:   SongID{prot, key, e},
+							Info: info,
+						}
+					}
+					pp[prot][key] = append(pp[prot][key], &p)
+				}
+			}
+		}
+		d.ProtocolPlaylists = pp
 		data = d
 	default:
 		return nil, fmt.Errorf("bad wait type: %s", wt)
@@ -215,6 +250,11 @@ func (srv *Server) makeWaitData(wt waitType) (*waitData, error) {
 		Type: wt,
 		Data: data,
 	}, nil
+}
+
+type ProtocolPlaylist struct {
+	Name  string
+	Songs []listItem
 }
 
 type PlaylistInfo []listItem
@@ -236,11 +276,11 @@ func New(stateFile string) (*Server, error) {
 	srv := Server{
 		ch:        make(chan interface{}),
 		songs:     make(map[SongID]*codec.SongInfo),
-		Protocols: make(map[string]map[string]protocol.Instance),
+		Protocols: make(map[string]map[string]*Instance),
 		Playlists: make(map[string]Playlist),
 	}
 	for name := range protocol.Get() {
-		srv.Protocols[name] = make(map[string]protocol.Instance)
+		srv.Protocols[name] = make(map[string]*Instance)
 	}
 	if stateFile != "" {
 		if f, err := os.Open(stateFile); os.IsNotExist(err) {
@@ -542,6 +582,7 @@ func (srv *Server) audio() {
 				ID:       id,
 			}] = s
 		}
+		srv.Protocols[c.protocol][c.key].Playlists = c.playlists
 		broadcast(waitTracks)
 		broadcast(waitProtocols)
 	}
@@ -637,7 +678,9 @@ func (srv *Server) audio() {
 			c.done <- err
 			return
 		}
-		prots[t.AccessToken] = instance
+		prots[t.AccessToken] = &Instance{
+			Instance: instance,
+		}
 		go srv.protocolRefresh(c.name, instance.Key(), false)
 		c.done <- nil
 	}
@@ -718,11 +761,12 @@ type cmdPlayIdx int
 type cmdRefresh struct {
 	protocol, key string
 	songs         protocol.SongList
+	playlists     []*protocol.Playlist
 }
 
 type cmdProtocolRemove struct {
 	protocol, key string
-	prots         map[string]protocol.Instance
+	prots         map[string]*Instance
 }
 
 type cmdQueueChange url.Values
@@ -834,14 +878,15 @@ func (srv *Server) protocolRefresh(protocol, key string, list bool) error {
 	if list {
 		f = inst.List
 	}
-	songs, err := f()
+	songs, playlists, err := f()
 	if err != nil {
 		return err
 	}
 	srv.ch <- cmdRefresh{
-		protocol: protocol,
-		key:      key,
-		songs:    songs,
+		protocol:  protocol,
+		key:       key,
+		songs:     songs,
+		playlists: playlists,
 	}
 	return err
 }
@@ -860,7 +905,9 @@ func (srv *Server) ProtocolAdd(form url.Values, ps httprouter.Params) (interface
 	if err != nil {
 		return nil, err
 	}
-	srv.Protocols[p][inst.Key()] = inst
+	srv.Protocols[p][inst.Key()] = &Instance{
+		Instance: inst,
+	}
 	err = srv.protocolRefresh(p, inst.Key(), false)
 	if err != nil {
 		delete(srv.Protocols[p], inst.Key())

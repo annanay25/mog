@@ -40,7 +40,7 @@ func (d *Drive) getService() (*drive.Service, *http.Client, error) {
 
 type Drive struct {
 	Token *oauth2.Token
-	Files map[string]*drive.File
+	Files map[protocol.ID]*drive.File
 	Songs protocol.SongList
 }
 
@@ -57,7 +57,7 @@ func (d *Drive) Key() string {
 	return d.Token.AccessToken
 }
 
-func (d *Drive) Info(id string) (*codec.SongInfo, error) {
+func (d *Drive) Info(id protocol.ID) (*codec.SongInfo, error) {
 	s := d.Songs[id]
 	if s == nil {
 		return nil, fmt.Errorf("could not find %v", id)
@@ -65,19 +65,19 @@ func (d *Drive) Info(id string) (*codec.SongInfo, error) {
 	return s, nil
 }
 
-func (d *Drive) List() (protocol.SongList, error) {
+func (d *Drive) List() (protocol.SongList, []*protocol.Playlist, error) {
 	if len(d.Songs) == 0 {
 		return d.Refresh()
 	}
-	return d.Songs, nil
+	return d.Songs, nil, nil
 }
 
-func (d *Drive) GetSong(id string) (codec.Song, error) {
-	path, num, err := protocol.ParseID(id)
+func (d *Drive) GetSong(id protocol.ID) (codec.Song, error) {
+	path, num, err := id.ParseID()
 	if err != nil {
 		return nil, err
 	}
-	f := d.Files[path]
+	f := d.Files[protocol.ID(path)]
 	if f == nil {
 		return nil, fmt.Errorf("missing %v", path)
 	}
@@ -114,12 +114,12 @@ func (d *Drive) reader(id string) codec.Reader {
 	}
 }
 
-func (d *Drive) Refresh() (protocol.SongList, error) {
+func (d *Drive) Refresh() (protocol.SongList, []*protocol.Playlist, error) {
 	service, _, err := d.getService()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	files := make(map[string]*drive.File)
+	files := make(map[protocol.ID]*drive.File)
 	songs := make(protocol.SongList)
 	var nextPage string
 	var ss []codec.Song
@@ -131,7 +131,7 @@ func (d *Drive) Refresh() (protocol.SongList, error) {
 			MaxResults(1000).
 			Do()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		nextPage = fl.NextPageToken
 		for _, f := range fl.Items {
@@ -139,7 +139,7 @@ func (d *Drive) Refresh() (protocol.SongList, error) {
 			if err != nil || len(ss) == 0 {
 				continue
 			}
-			files[f.Id] = f
+			files[protocol.ID(f.Id)] = f
 			for i, v := range ss {
 				id := fmt.Sprintf("%v-%v", i, f.Id)
 				info, _ := v.Info()
@@ -150,7 +150,7 @@ func (d *Drive) Refresh() (protocol.SongList, error) {
 					}
 					info.Title = title
 				}
-				songs[id] = &info
+				songs[protocol.ID(id)] = &info
 			}
 		}
 		if nextPage == "" {
@@ -159,5 +159,5 @@ func (d *Drive) Refresh() (protocol.SongList, error) {
 	}
 	d.Songs = songs
 	d.Files = files
-	return songs, err
+	return songs, nil, err
 }

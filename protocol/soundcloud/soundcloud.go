@@ -47,7 +47,7 @@ func (s *Soundcloud) getService() (*soundcloud.Service, *http.Client, error) {
 
 type Soundcloud struct {
 	Token     *oauth2.Token
-	Favorites map[string]*soundcloud.Favorite
+	Favorites map[protocol.ID]*soundcloud.Favorite
 }
 
 func New(params []string, token *oauth2.Token) (protocol.Instance, error) {
@@ -63,7 +63,7 @@ func (s *Soundcloud) Key() string {
 	return s.Token.AccessToken
 }
 
-func (s *Soundcloud) Info(id string) (*codec.SongInfo, error) {
+func (s *Soundcloud) Info(id protocol.ID) (*codec.SongInfo, error) {
 	f := s.Favorites[id]
 	if f == nil {
 		return nil, fmt.Errorf("could not find %v", id)
@@ -87,14 +87,14 @@ func (s *Soundcloud) SongList() protocol.SongList {
 	return m
 }
 
-func (s *Soundcloud) List() (protocol.SongList, error) {
+func (s *Soundcloud) List() (protocol.SongList, []*protocol.Playlist, error) {
 	if len(s.Favorites) == 0 {
 		return s.Refresh()
 	}
-	return s.SongList(), nil
+	return s.SongList(), nil, nil
 }
 
-func (s *Soundcloud) GetSong(id string) (codec.Song, error) {
+func (s *Soundcloud) GetSong(id protocol.ID) (codec.Song, error) {
 	fmt.Println("SOUNDCLOUD", id)
 	_, client, err := s.getService()
 	if err != nil {
@@ -116,19 +116,19 @@ func (s *Soundcloud) GetSong(id string) (codec.Song, error) {
 	})
 }
 
-func (s *Soundcloud) Refresh() (protocol.SongList, error) {
+func (s *Soundcloud) Refresh() (protocol.SongList, []*protocol.Playlist, error) {
 	service, _, err := s.getService()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	favorites, err := service.Favorites().Do()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	favs := make(map[string]*soundcloud.Favorite)
+	favs := make(map[protocol.ID]*soundcloud.Favorite)
 	for _, f := range favorites {
-		favs[strconv.FormatInt(f.ID, 10)] = f
+		favs[protocol.ID(strconv.FormatInt(f.ID, 10))] = f
 	}
 	s.Favorites = favs
-	return s.SongList(), err
+	return s.SongList(), nil, err
 }

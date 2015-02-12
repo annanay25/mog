@@ -46,12 +46,7 @@ func (f *File) Key() string {
 	return f.Path
 }
 
-func (f *File) Info(id string) (*codec.SongInfo, error) {
-	if _, ok := f.Songs[id]; !ok {
-		if _, err := f.List(); err != nil {
-			return nil, err
-		}
-	}
+func (f *File) Info(id protocol.ID) (*codec.SongInfo, error) {
 	v := f.Songs[id]
 	if v == nil {
 		return nil, fmt.Errorf("could not find %v", id)
@@ -59,8 +54,8 @@ func (f *File) Info(id string) (*codec.SongInfo, error) {
 	return v, nil
 }
 
-func (f *File) GetSong(id string) (codec.Song, error) {
-	path, num, err := protocol.ParseID(id)
+func (f *File) GetSong(id protocol.ID) (codec.Song, error) {
+	path, num, err := id.ParseID()
 	if err != nil {
 		return nil, err
 	}
@@ -71,14 +66,14 @@ func (f *File) GetSong(id string) (codec.Song, error) {
 	return songs[num], nil
 }
 
-func (f *File) List() (protocol.SongList, error) {
+func (f *File) List() (protocol.SongList, []*protocol.Playlist, error) {
 	if len(f.Songs) == 0 {
 		return f.Refresh()
 	}
-	return f.Songs, nil
+	return f.Songs, nil, nil
 }
 
-func (f *File) Refresh() (protocol.SongList, error) {
+func (f *File) Refresh() (protocol.SongList, []*protocol.Playlist, error) {
 	songs := make(protocol.SongList)
 	err := filepath.Walk(f.Path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -109,12 +104,12 @@ func (f *File) Refresh() (protocol.SongList, error) {
 			if info.Album == "" {
 				info.Album = filepath.Base(filepath.Dir(path))
 			}
-			songs[id] = &info
+			songs[protocol.ID(id)] = &info
 		}
 		return nil
 	})
 	f.Songs = songs
-	return songs, err
+	return songs, nil, err
 }
 
 func fileReader(path string) codec.Reader {

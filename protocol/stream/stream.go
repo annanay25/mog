@@ -124,21 +124,21 @@ func (s *Stream) Key() string {
 	return s.URL
 }
 
-func (s *Stream) List() (protocol.SongList, error) {
+func (s *Stream) List() (protocol.SongList, []*protocol.Playlist, error) {
 	return protocol.SongList{
-		s.URL: s.info(),
-	}, nil
+		protocol.ID(s.URL): s.info(),
+	}, nil, nil
 }
 
-func (s *Stream) Refresh() (protocol.SongList, error) {
+func (s *Stream) Refresh() (protocol.SongList, []*protocol.Playlist, error) {
 	return s.List()
 }
 
-func (s *Stream) Info(string) (*codec.SongInfo, error) {
+func (s *Stream) Info(protocol.ID) (*codec.SongInfo, error) {
 	return s.info(), nil
 }
 
-func (s *Stream) GetSong(string) (codec.Song, error) {
+func (s *Stream) GetSong(protocol.ID) (codec.Song, error) {
 	return mpa.NewSong(s.reader())
 }
 

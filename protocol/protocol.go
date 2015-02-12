@@ -24,16 +24,16 @@ type Instance interface {
 	// Key returns a unique identifier for the instance.
 	Key() string
 	// List returns the list of available songs, possibly cached.
-	List() (SongList, error)
+	List() (SongList, []*Playlist, error)
 	// Refresh forces an update of the song list.
-	Refresh() (SongList, error)
+	Refresh() (SongList, []*Playlist, error)
 	// Info returns information about one song.
-	Info(string) (*codec.SongInfo, error)
+	Info(ID) (*codec.SongInfo, error)
 	// GetSong returns a playable song.
-	GetSong(string) (codec.Song, error)
+	GetSong(ID) (codec.Song, error)
 }
 
-type SongList map[string]*codec.SongInfo
+type SongList map[ID]*codec.SongInfo
 
 func (p *Protocol) NewInstance(params []string, token *oauth2.Token) (Instance, error) {
 	return p.newInstance(params, token)
@@ -76,11 +76,18 @@ func Get() map[string]Params {
 	return m
 }
 
-func ParseID(id string) (path string, num int, err error) {
-	sp := strings.SplitN(id, "-", 2)
+type ID string
+
+func (id ID) ParseID() (path string, num int, err error) {
+	sp := strings.SplitN(string(id), "-", 2)
 	i, err := strconv.Atoi(sp[0])
 	if len(sp) != 2 || err != nil {
 		return "", 0, fmt.Errorf("bad format")
 	}
 	return sp[1], i, nil
+}
+
+type Playlist struct {
+	Name  string
+	Songs []ID
 }
