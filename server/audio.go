@@ -23,7 +23,19 @@ func (srv *Server) audio() {
 	var next, stop, tick, play, pause, prev func()
 	var timer <-chan time.Time
 	waiters := make(map[*websocket.Conn]chan struct{})
+	audioers := make(map[chan []float32]struct{})
 	var seek *Seek
+	broadcastAudio := func(s []float32) {
+		o.Push(s)
+		for c := range audioers {
+			go func(c chan []float32) {
+				select {
+				case c <- s:
+				default:
+				}
+			}(c)
+		}
+	}
 	broadcastData := func(wd *waitData) {
 		for ws := range waiters {
 			go func(ws *websocket.Conn) {
@@ -135,6 +147,7 @@ func (srv *Server) audio() {
 		srv.song = nil
 		srv.elapsed = 0
 	}
+	var sr, ch int
 	tick = func() {
 		const expected = 4096
 		if false && srv.elapsed > srv.info.Time {
@@ -166,7 +179,7 @@ func (srv *Server) audio() {
 				return
 			}
 			srv.song = song
-			sr, ch, err := srv.song.Init()
+			sr, ch, err = srv.song.Init()
 			if err != nil {
 				srv.song.Close()
 				printErr(err)
@@ -192,7 +205,7 @@ func (srv *Server) audio() {
 		if err == nil {
 			srv.elapsed = seek.Pos()
 			if len(next) > 0 {
-				o.Push(next)
+				broadcastAudio(next)
 			}
 			select {
 			case <-timer:
