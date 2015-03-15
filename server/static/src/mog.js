@@ -23,6 +23,35 @@ _.each(Actions, function(action, name) {
 	});
 });
 
+var browserStream;
+var sxhr;
+
+func streamBrowser() {
+	if (!browserStream) {
+		if (sxhr) {
+			sxhr.abort();
+			sxhr = null;
+			console.log("abort SB XHR")
+		}
+		console.log("stop SB");
+		return;
+	}
+	if (!sxhr) {
+		sxhr = new XMLHttpRequest()
+		sxhr.open("GET", "/api/stream", true);
+		sxhr.responseType = "arraybuffer";
+		sxhr.onload = function() {
+			context.decodeAudioData(sxhr.response, function(buffer) {
+				
+			}
+		};
+		sxhr.send();
+	}
+}
+
+browserStream = true;
+streamBrowser();
+
 function POST(path, params, success) {
 	var data = new(FormData);
 	if (_.isArray(params)) {

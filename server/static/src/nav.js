@@ -70,6 +70,7 @@ var App = React.createClass({
 						<li><Link to="app">Music</Link></li>
 						<li><Link to="protocols">Sources</Link></li>
 						<li><Link to="queue">Queue</Link></li>
+						<li><Link to="settings">Settings</Link></li>
 					</ul>
 					<h4>Playlists</h4>
 					<ul>{playlists}</ul>
@@ -189,6 +190,7 @@ var routes = (
 		<Route name="playlist" path="/playlist/:Playlist" handler={Playlist} />
 		<Route name="protocols" handler={Protocols} />
 		<Route name="queue" handler={Queue} />
+		<Route name="settings" handler={Settings} />
 	</Route>
 );
 
